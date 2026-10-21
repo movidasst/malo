@@ -1,25 +1,33 @@
-name: Diagnose Directorio public origin
+name: Check Directorio social preview
 on:
   push:
     paths:
       - '.github/workflows/diagnose-directorio-origin.yml'
 jobs:
-  inspect:
+  validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect live public home safely
+      - name: Validate public WhatsApp thumbnail
+        shell: bash
         run: |
           set -euo pipefail
-          echo '--- DNS ---'
-          dig +short directorio.movidasst.com CNAME || true
-          dig +short directorio.movidasst.com A || true
-          echo '--- HEADERS ---'
-          curl -IsS --max-time 20 'https://directorio.movidasst.com/' | head -n 40
-          echo '--- HTML HEAD ONLY ---'
-          curl -sSL --max-time 25 -A 'WhatsApp/2.26.21.10' 'https://directorio.movidasst.com/?ogtest=20261021' -o /tmp/current.html
-          python3 - <<'PY'
-          from pathlib import Path
-          s=Path('/tmp/current.html').read_text(errors='replace')
-          print('response-bytes:',len(s))
-          print('head-section:',s[:min(s.find('</head>')+7,10500) if '</head>' in s else min(len(s),3500)])
-          PY
+          ROOT='https://directorio.movidasst.com/'
+          IMAGE='https://directorio.movidasst.com/og-directorio-sst-20261021.jpg'
+          for attempt in $(seq 1 15); do
+            curl --fail --silent --show-error --location -A 'WhatsApp/2.26.21.10' "${ROOT}?ogtest=20261021-${attempt}" -o /tmp/dir.html
+            if grep -Fq "$IMAGE" /tmp/dir.html; then echo "OG tags visible at attempt $attempt"; break; fi
+            echo "waiting for deployed tags attempt $attempt"
+            sleep 8
+          done
+          grep -Fq "<meta property=\"og:image\" content=\"${IMAGE}\"" /tmp/dir.html
+          grep -F "og:image" /tmp/dir.html | head -n 5
+          curl --fail --silent --show-error --location -A 'WhatsApp/2.26.21.10' -D /tmp/image-headers "$IMAGE" -o /tmp/directorio.jpg
+          grep -Ei '^HTTP/|^content-type:|^content-length:' /tmp/image-headers | tail -n 7
+          file /tmp/directorio.jpg
+          SIZE=$(stat -c%s /tmp/directorio.jpg)
+          echo "JPEG total bytes: $SIZE"
+          test "$SIZE" -gt 25000
+          test "$SIZE" -lt 340000
+          file --mime-type /tmp/directorio.jpg | grep -q 'image/jpeg'
+          file /tmp/directorio.jpg | grep -q '1200x630'
+          echo 'Success: correct public OG and JPEG preview'
