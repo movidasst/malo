@@ -1,0 +1,25 @@
+name: Diagnose Directorio public origin
+on:
+  push:
+    paths:
+      - '.github/workflows/diagnose-directorio-origin.yml'
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect live public home safely
+        run: |
+          set -euo pipefail
+          echo '--- DNS ---'
+          dig +short directorio.movidasst.com CNAME || true
+          dig +short directorio.movidasst.com A || true
+          echo '--- HEADERS ---'
+          curl -IsS --max-time 20 'https://directorio.movidasst.com/' | head -n 40
+          echo '--- HTML HEAD ONLY ---'
+          curl -sSL --max-time 25 -A 'WhatsApp/2.26.21.10' 'https://directorio.movidasst.com/?ogtest=20261021' -o /tmp/current.html
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('/tmp/current.html').read_text(errors='replace')
+          print('response-bytes:',len(s))
+          print('head-section:',s[:min(s.find('</head>')+7,10500) if '</head>' in s else min(len(s),3500)])
+          PY
